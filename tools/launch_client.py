@@ -154,7 +154,7 @@ def main(argv=None):
         if config.local_port!=19400:parser.error('Pinned native adapter requires TCP19400')
     selection=compatibility_preflight(args.client,args.allow_client_variants)
     sys.path.insert(0,str(ROOT/'tools'))
-    image=(Path(selection['native_directory'])/'x2-runtime.bin').read_bytes()
+    image=(Path(selection['native_directory'])/'native-prefixes.bin').read_bytes()
     prepare_native_sources(image,args.client.parent,args.allow_client_variants,True)
     from install_ed_shop_bridge import bridge_source
     bridge_source(image)

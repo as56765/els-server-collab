@@ -565,7 +565,7 @@ class LauncherService:
             if not ok:
                 raise ValueError('客户端版本不匹配，停止检查')
             from tools.launch_client import prepare_native_sources
-            image = (ROOT/'analysis/client-6c6b5180/x2-runtime.bin').read_bytes()
+            image = (ROOT/'analysis/client-6c6b5180/native-prefixes.bin').read_bytes()
             prepare_native_sources(image, self.client.parent)
             results.append(dict(name='启动资源兼容', ok=True, detail='固定客户端资源、原生摘要与磁盘索引校验通过'))
             client_data()

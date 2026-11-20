@@ -5,7 +5,7 @@ ROOT=Path(__file__).resolve().parents[1];sys.path[:0]=[str(ROOT),str(ROOT/'tools
 import psutil
 RVAS=(0x69ca00,0x47bb40,0x47a770,0x23d6a80,0x31133f0,0x311c030,0x313a340,0x313a890,0x1c45370,0x1c4d500,0x1c71230,0x1c4e7a0)
 def bridge_source(image,already_loaded=False):
-    assert hashlib.sha256(image).hexdigest()=='c8815e00b737c6890f87929a48cac7a6905d237fe4f04f4e8cf53aec3bfd6229'
+    assert hashlib.sha256(image).hexdigest()=='3cc9fca449c7a543957c5cdf439c7ba81323efd4a4b3fe577ed0ff0e954a820a'
     from shop_state import quantity_catalog as catalog,home_lists
     from shop_messages import ed_catalog_ack
     from els_server.domain.character_rules import CLASSES
@@ -22,7 +22,7 @@ if __name__=='__main__':
     assert not i.get('local_ed_shop_bridge'), 'The startup bridge already owns these hooks; use install_shop_open.py'
     assert abs(p.create_time()-i['created'])<.001 and Path(p.exe()).resolve()==Path(i['exe']).resolve()
     assert hashlib.sha256(Path(i['exe']).read_bytes()).hexdigest()==i['file_sha256']=='6c6b51809aec90f9b717a9e55d679f221315a6296d69da80510e3456423a1709'
-    image=(ROOT/'analysis/client-6c6b5180/x2-runtime.bin').read_bytes()
+    image=(ROOT/'analysis/client-6c6b5180/native-prefixes.bin').read_bytes()
     events=list(map(json.loads,(run/'server-console.jsonl').read_text(encoding='utf8').splitlines()))
     code=bridge_source(image,any(e.get('event')=='local_business_response_sent' and e.get('kind')==0x80e for e in events))
     if '--open' in sys.argv[2:] or '--close' in sys.argv[2:]:
