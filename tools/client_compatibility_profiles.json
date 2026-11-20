@@ -15,7 +15,7 @@
         "tools/local_startup_config_fix.js": "a7873b6c123eedfd968d6affd5c93af5cfbab2204eb3658d815f9b9a3a28866b",
         "tools/dx11_resource_compat.json": "6a5a2848d2ea46c5529301f846dd7d88b8bcc3ffa3200138b0c2ef32a893d6c7",
         "tools/dx11_resource_compat.js": "c9c2a34beb9b60252a273ab45c6b6bdc938501292573da1d9eb964e3f3b6c192",
-        "tools/local_resource_index_compat.js": "9218cb772ee8f83b48c9bc6e1d6448e3f4599e8f6f50be3368f8866702fd7e90",
+        "tools/local_resource_index_compat.js": "77242ac9fd8109a81df11fb6dc4ef4cff396b74cc4925f9493c8ae717684192e",
         "els_server/data/client/manifest.json": "381cc3ba4a02b423ae82bd61f93e0dcbb454f911c806711e660442f888acf699",
         "els_server/data/client/catalog.sqlite3": "a633289850ef5b814aa338542e5f80e641153e99734c4f5c8c82f62bde49c3ba",
         "analysis/client-6c6b5180/native-prefixes.bin": "3cc9fca449c7a543957c5cdf439c7ba81323efd4a4b3fe577ed0ff0e954a820a",

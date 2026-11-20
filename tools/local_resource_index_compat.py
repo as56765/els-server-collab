@@ -77,8 +77,15 @@ def source(image,directory,allow_variants=False,*,use_retained_original_indexes=
         # 诊断模式：只记录磁盘头与内嵌目录描述符的差异，不写任何客户端内存。
         return (ROOT/'tools/local_resource_index_probe.js').read_text(encoding='utf8').replace(
             '__INDEX_PREFIX__',image[0x3653b0:0x3653c0].hex())
+    if use_retained_original_indexes and allow_variants:
+        raise ValueError('Retained indexes require the exact pinned resource profile')
+    pins={}
+    selected=dict(PINNED)
+    if use_retained_original_indexes:
+        pins=json.loads((ROOT/'tools/original_index_pins.json').read_text(encoding='utf8'))['archives']
+        selected.update({name:row['sha256'] for name,row in pins.items()})
     specs={}
-    for name,digest in PINNED.items():
+    for name,digest in selected.items():
         path=Path(directory)/name
         if not path.is_file():
             if not allow_variants:raise ValueError('Unverified local archive: '+name)

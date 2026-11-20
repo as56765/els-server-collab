@@ -290,6 +290,142 @@
       "header_sha256": "594bd27368848dd72f7864980179d14d328261a15c4b09851416a83e031e6196",
       "index_sha256": "599e4a9042103555221af91ab87e5ea60f313c03e0b7f6cad4a6d807a15e03d5",
       "index_status": "parsed"
+    },
+    "data034.kom": {
+      "sha256": "55731d2936dc790b61525cc76ff4aabb2333ebe8d7986ab6fe98226bf15438f7",
+      "size": 1741084,
+      "entry_count": 958,
+      "header_sha256": "e7826a3ec52bb874f72f3d606e6b905601cec3a63f3e8014fb8e34ee997c6cae",
+      "index_sha256": "76e0e8d446bf5e418f3b733b6fce986b421ebf2064ba34dc1fcab417c59b5090",
+      "index_status": "parsed"
+    },
+    "data043.kom": {
+      "sha256": "974ea71bc30cc36f07a89baf9e3a2892c75e0a10bcd4dc209ad244ed08f41bbb",
+      "size": 26479614,
+      "entry_count": 316,
+      "header_sha256": "09ac99c9001a07ca2358f0d52e38cc84520c7eae27c8c4b4b6ce3a57a75203da",
+      "index_sha256": "33299a5afafd863aa31f67ab1176019735bbb8b3c344f35546fcd8e4fad66e53",
+      "index_status": "parsed"
+    },
+    "data049.kom": {
+      "sha256": "b4a17870abf3a43d2a42a8f9376cbe7f2edb1f940a79f1c645809bf1ac2add23",
+      "size": 1443836,
+      "entry_count": 353,
+      "header_sha256": "e5badf660b978f7c5b42fd21fb7b3c289b1365a16ddd9c9f9a3dd5dab50941dd",
+      "index_sha256": "abd79f7c07b82c7c27709cf52f09687b945abcc9f50d072270e8a99e65d71c48",
+      "index_status": "parsed"
+    },
+    "data064.kom": {
+      "sha256": "75a718f2dde108e16f4cd7c18c5a8fcc47cab49b8f7d47384834768a14d2a8e2",
+      "size": 45842627,
+      "entry_count": 506,
+      "header_sha256": "6edd08eebc54c28a8b0227bd794b3fdaa11c3c283635ebee441818612c9ca26d",
+      "index_sha256": "b348edcba5c41ed102a21839136e625af89ebd612b567435742ead7f844f1fb6",
+      "index_status": "parsed"
+    },
+    "data140.kom": {
+      "sha256": "3621eb0ae2a856ab519423aafe65e7efda0daf5d051e22fc5fd4e8c991f9c712",
+      "size": 69758884,
+      "entry_count": 285,
+      "header_sha256": "7feb8750a9b41ab9e4a61acef88ffd01e016f4fd859e9189c778de961a3385b7",
+      "index_sha256": "e22000670a3f407bdc8dc28e9aecd32e26282656b655c3a1febebbb08876cb81",
+      "index_status": "parsed"
+    },
+    "data141.kom": {
+      "sha256": "118a7bb225140394bf1bb77f8d5dc7ff1f465eb08c9db41e615eb184a433b0ed",
+      "size": 35690153,
+      "entry_count": 980,
+      "header_sha256": "7c593f88c4bc2011457f3f76c3da5d2ab0d528b949afbc02b1391aaeb61cda65",
+      "index_sha256": "b87cb6b7b82ce89b70c8465578239e3631bf2961d4633a6c16e9d87f9e8bf3dc",
+      "index_status": "parsed"
+    },
+    "data217.kom": {
+      "sha256": "b082d4d3be0f46e55c2f6b192193fa232e098ff76aee355a5255388b33890626",
+      "size": 1928073,
+      "entry_count": 922,
+      "header_sha256": "fcde9a7769c7332c1a44e39e61f3c345aee87cbe8cd9780c642275ef02b43bd1",
+      "index_sha256": "2790bd272b254a86fe50d88f582315971718b88f968af8620e78e7114d58e547",
+      "index_status": "parsed"
+    },
+    "data234.kom": {
+      "sha256": "bfa148ec52697ba7b269c9aa47033f11a99a0e642614eeed899e503a904d0583",
+      "size": 182562817,
+      "entry_count": 926,
+      "header_sha256": "e5bac29bbbefb59e37f6ae141bf6c0b1c3dcdd5c0cd69b1b1b2f50d4c9fd8b29",
+      "index_sha256": "26b1e8b6b3527562e6376048fcedb08e4bee610d7d8114f75154f01e2532ed24",
+      "index_status": "parsed"
+    },
+    "data235.kom": {
+      "sha256": "4f57aacea6de50bbc9a946eea3c371ddc74f763ceff0ba68df6b6dc76aeb97e9",
+      "size": 140888934,
+      "entry_count": 353,
+      "header_sha256": "ccdaf9641d536d0880114d66990d5c3b96cb02e233c40cfcefa730b06bf8dac3",
+      "index_sha256": "f24d8a1cab0d2c2a5b62f22b585b7e28b0c102ecca0bc0e339e697eeb16652cd",
+      "index_status": "parsed"
+    },
+    "data237.kom": {
+      "sha256": "61eb7b846fd994b5d9bb39188407545619904216d5ea0a16ba8430d2710ad656",
+      "size": 1644927,
+      "entry_count": 25,
+      "header_sha256": "1ff23d8aaa02a61ff894f62e5f66db90002a8d194f79d073ea01e36e3f2c1069",
+      "index_sha256": "d82f5773f63b974d6b21f75bf01dc9031a27d5399739c3698f064645ab9f0ab2",
+      "index_status": "parsed"
+    },
+    "data256.kom": {
+      "sha256": "1b42a226d772dd03d4cf84467ef3bdd3cb9cbf9027e002c69e56964942ecf320",
+      "size": 60326835,
+      "entry_count": 190,
+      "header_sha256": "ad2384f8e9dc16d9296e3a248716af75780ec6d8fd9ce3d6c2f6462ca14dd0f3",
+      "index_sha256": "a76a7953b0f8b6039d2cf0121137eae14d7b7f36d17d658c55a395d7e934aacd",
+      "index_status": "parsed"
+    },
+    "data372.kom": {
+      "sha256": "20b581679154cc321e8c5e544aa6992380f6003089c5254833630c96c0c7d829",
+      "size": 23305023,
+      "entry_count": 745,
+      "header_sha256": "98190a98bf6c0e8ad81c5ad8a219cf135c6047c1603b7fe6810cba1b24306a72",
+      "index_sha256": "9c4e89073c78bb766002f5d3a5b3a8ada92f74e90d9cf6341abb0854b6acd351",
+      "index_status": "parsed"
+    },
+    "data375.kom": {
+      "sha256": "d19d6e2945ed480652317395ecd302e95f0209749877a9fafd26238221adeeee",
+      "size": 18928233,
+      "entry_count": 6,
+      "header_sha256": "23ccdde6aa3922020d3616a4e3719207a41ffef4dc0d8defbf17263d208ba003",
+      "index_sha256": "a6040645f40ae8e24d1b49098189837b58d879080b1dee577dc0161503d028e0",
+      "index_status": "parsed"
+    },
+    "data069.kom": {
+      "sha256": "62a0cc482638f95f87a2b7147d0b7e2eb768b98c036205210a9b9e1668a9e521",
+      "size": 93781837,
+      "entry_count": 2134,
+      "header_sha256": "f8b7ddf8abf16591fd9ea89a2c93cc29e1059f692026413fff93ed15a6b4f90e",
+      "index_sha256": "13e2a1ccc5378bee8feecbbfbc9de5141f8a98cf4b5e46d28aea8290473659a2",
+      "index_status": "parsed"
+    },
+    "data119.kom": {
+      "sha256": "838758a7bd03e284e389720405e90c689e5431e8191e32eb66e1f98dfc594c42",
+      "size": 48964993,
+      "entry_count": 939,
+      "header_sha256": "3e8d9122d05e58fe16d687fcbdd39e7fc2a54cc15057df2e940aae3e4117422d",
+      "index_sha256": "b730ad9c0b5683c1c00504672e2f528effa4b6e33e0df6947e64a40078adb894",
+      "index_status": "parsed"
+    },
+    "data205.kom": {
+      "sha256": "4f2de933eac9a6e8e0cc19b79d36ac4da10968459f898befebd138db75f2e628",
+      "size": 218728511,
+      "entry_count": 248,
+      "header_sha256": "16e10ce24fedef92f267c98fef9cd3fdbdd4599dfbb8bedd5bfe4cb7db5046ce",
+      "index_sha256": "685291d9bbc6f6d0fe3c42c151f567027c5667567c977e879354ad3adf2e1299",
+      "index_status": "parsed"
+    },
+    "data223.kom": {
+      "sha256": "1f52441341e1c963843991347e5888c9751632aea44366d5cf0e817da4c8af77",
+      "size": 194081215,
+      "entry_count": 2890,
+      "header_sha256": "200bcd769ecfb8fe8d2bf2b82f655a8832c4accf330b57f0d1e26ecd75792ad7",
+      "index_sha256": "7bc725b06317716c819ef0261a0476fe74e86127a45e3bac9180cb63671a6720",
+      "index_status": "parsed"
     }
   },
   "scope": "Original archive index selection through the existing native loader; exact historical full-file/header/index pins; no fabricated native success or error-bit clearing"
