@@ -411,6 +411,18 @@ class LocalSession:
         return reply
 
     def handle(self,event,request_sequence=None):
+        # Local diagnostic for unresolved NPC interaction kinds; remove once
+        # their native meaning is known.
+        _noise={0x0,0x35,0x38e,0x3e6,0x555,0x563,0x64c,0x64e,0x7d0,0x85,0xa0,0x1a6,0x22b,0x231,0x75d,0x357}
+        if event.event_id==0x202 and event.kind not in _noise and getattr(self,'account',None) is not None and self.account.store is not None:
+            try:
+                import json as _json,time as _time
+                from pathlib import Path as _Path
+                with _Path(self.account.store.path).with_name('local-debug-packets.jsonl').open('a',encoding='utf8') as _stream:
+                    _stream.write(_json.dumps(dict(time=round(_time.time(),3),kind=event.kind,
+                        payload=event.payload[:256].hex(),phase=self.phase,map=self.active_map))+'\n')
+            except (OSError,AttributeError,TypeError):
+                pass
         notices=self.expiration_notifications()
         from els_server.domain.quest_flow import observe
         before=observe(self,notices)
@@ -1672,8 +1684,11 @@ class LocalSession:
                 else:initial=initial_substage(self.client_build,0 if self.npc_slot_test else None,gate_test=self.gate_test)
                 reply.extend([Event(0x201,kind=0x96,payload=b''),initial])
             return reply
-        if self.enter_town and self.phase in ['player_initialized','skill_ui_ready','initialization_confirmed','map_loading','square_accepted','town_ready'] and event.event_id==0x202:
-            if self.enter_dungeon and self.phase=='town_ready' and kind==0x7d4:
+        cleared=(self.phase=='dungeon_active' and self.clear_notified
+                 and not self.dungeon_return_pending)
+        retry_entry=cleared and kind in (0x7d4,0x37f,0x382)
+        if self.enter_town and (self.phase in ['player_initialized','skill_ui_ready','initialization_confirmed','map_loading','square_accepted','town_ready'] or retry_entry) and event.event_id==0x202:
+            if self.enter_dungeon and (self.phase=='town_ready' or retry_entry) and kind==0x7d4:
                 from els_server.protocol.dungeon_messages import SUPPORTED_DUNGEON
                 from els_server.domain.dungeon_routes import route_catalog
                 mode,identity=struct.unpack('>ii',event.payload) if len(event.payload)==8 else (0,0)
@@ -1712,7 +1727,7 @@ class LocalSession:
                 self.requested_dungeon_mode=admitted_mode if valid else None
                 self.requested_challenge=challenge if valid else None
                 return extra+[Event(0x201,kind=0x7d5,payload=i32(0 if valid else result)+i32(admitted_mode))]
-            if self.enter_dungeon and self.phase=='town_ready' and kind in (0x37f,0x382):
+            if self.enter_dungeon and (self.phase=='town_ready' or retry_entry) and kind in (0x37f,0x382):
                 from els_server.protocol.dungeon_messages import SUPPORTED_DUNGEON,dungeon_start
                 # Current 2E09A80 -> 2E0DE00 -> virtualized 2B48B60:
                 # the native 18-byte record is
@@ -1727,6 +1742,12 @@ class LocalSession:
                 def admission_ack(result):
                     # 2D62800 reads result, u64, two wide strings (380).
                     return Event(0x201,kind=ack,payload=i32(result)+(bytes(8) if kind==0x37f else b'')+wstring('')*2)
+                if cleared and not self.dungeon_requested:
+                    # F8 retry sends the same continuation without a new 7D4
+                    # selection; reuse the run identity the result screen shows.
+                    self.dungeon_requested=True;self.requested_dungeon_id=self.dungeon_id
+                    self.requested_dungeon_mode=2 if kind==0x37f else 1
+                    self.requested_challenge=getattr(self,'active_challenge',None)
                 valid=self.dungeon_requested and self.requested_dungeon_mode==(2 if kind==0x37f else 1) and 23<=len(opaque)<=86 and any(struct.unpack_from('>I',opaque,o)[0]==len(opaque)-22 for o in range(19))
                 if valid:
                     from els_server.domain.region_quests import account_dungeon_allowed

@@ -16,8 +16,8 @@ def skill_data(slots,character=None):
     from els_server.domain.skill_state import preset_payload
     preset=preset_payload(slots,allowed,character)
     from els_server.domain.skill_unlocks import ids_wire
-    force_owned=learned  # Preserve the existing non-owner wire format.
-    if (character or {}).get('force_inventory'):
+    force_owned=learned  # Peer payloads without an owner projection keep the learned vector.
+    if character is not None and 'force_inventory' in character:
         from els_server.domain.boosting_2026_force_inventory import vector
         force_owned=vector(character)
     return u32(22)+b''.join(record(v) for v in slots)+records(character)+learned+u32(0)+ids_wire(character)+b'\1\1'+preset+force_owned+b'\0'

@@ -74,6 +74,15 @@ def item_catalog():
         rows.append(dict(id=identity, name=definition['name'], group=group,
                          bag=BAGS.get(group, str(group)), stack=TEMPLATE_MAX_STACKS[identity],
                          metadata=VERIFIED_TEMPLATES[identity]))
+    from els_server.domain.gm_item_catalog import entries as accessory_entries
+    known = {row['id'] for row in rows}
+    for row in accessory_entries():
+        if row['id'] in known:
+            continue
+        rows.append(dict(id=row['id'], name=row['name'], group=row['group'],
+                         bag=BAGS.get(row['group'], str(row['group'])), stack=row['stack'],
+                         metadata=row['metadata']))
+    rows.sort(key=lambda row: row['id'])
     return tuple(rows)
 
 
@@ -172,14 +181,59 @@ class LauncherService:
             if not db.execute('SELECT 1 FROM characters WHERE uid=?', (uid,)).fetchone():
                 raise ValueError('角色不存在')
             from els_server.game_data import client_data
+            from els_server.domain.enhancement_scroll import SCROLLS
+            from els_server.domain.normal_equipment import definitions as enhanceable_defs
+            enhanceable = enhanceable_defs()
+            levels = {}
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='equipment_enhancement'").fetchone():
+                levels = dict(db.execute('SELECT item_uid,level FROM equipment_enhancement'))
             rows = []
             for r in db.execute('SELECT uid,template,count,bag_group,slot FROM inventory_items WHERE owner=? ORDER BY bag_group,slot', (uid,)):
                 try:
                     name = client_data().item(r[1])['name']
                 except ValueError:
                     name = '未收录道具'
-                rows.append(dict(uid=r[0], template=r[1], name=name, count=r[2], bag=BAGS.get(r[3], str(r[3])), slot=r[4]+1))
+                rows.append(dict(uid=r[0], template=r[1], name=name, count=r[2], bag=BAGS.get(r[3], str(r[3])), slot=r[4]+1,
+                                 enhanceable=r[1] in enhanceable and r[1] not in SCROLLS,
+                                 enhancement=levels.get(r[0], 0)))
             return rows
+
+    def owned_scrolls(self, uid):
+        bounded_int(uid, 1001, 2**53-1, '角色编号')
+        from els_server.domain.enhancement_scroll import defs_for_display
+        from els_server.game_data import client_data
+        rows = []
+        with closing(self.connect()) as db:
+            for template, count in db.execute('SELECT template,SUM(count) FROM inventory_items WHERE owner=? GROUP BY template', (uid,)):
+                info = defs_for_display().get(template)
+                if info is None or not count:
+                    continue
+                rows.append(dict(template=template, level=info['level'], count=count,
+                                 name=client_data().item(template)['name']))
+        rows.sort(key=lambda row: row['level'])
+        return rows
+
+    def scroll_queue(self):
+        from els_server.storage import gm_scroll_queue
+        return gm_scroll_queue.status(self.save)
+
+    def use_scroll(self, data):
+        required = {'operation_id', 'uid', 'item_uid', 'scroll', 'reason'}
+        if not isinstance(data, dict) or set(data) != required:
+            raise ValueError('卷轴参数不完整')
+        operation_id = data['operation_id']
+        if not isinstance(operation_id, str) or str(uuid.UUID(operation_id)) != operation_id:
+            raise ValueError('无效操作编号')
+        uid = bounded_int(data['uid'], 1001, 2**53-1, '角色编号')
+        item_uid = bounded_int(data['item_uid'], 1, 2**63-1, '装备实例编号')
+        scroll = bounded_int(data['scroll'], 1, 2**31-1, '卷轴编号')
+        reason = data['reason']
+        if not isinstance(reason, str) or not 2 <= len(reason.strip()) <= 200:
+            raise ValueError('请输入 2–200 字的操作原因')
+        from els_server.storage import gm_scroll_queue
+        return gm_scroll_queue.enqueue(self.save, dict(operation_id=operation_id, uid=uid,
+                                                       item_uid=item_uid, scroll=scroll,
+                                                       reason=reason.strip()))
 
     def search_items(self, query, group='all', offset=0):
         query = str(query).strip().casefold()[:100]
@@ -220,6 +274,88 @@ class LauncherService:
             if not self.table(db, 'launcher_gm_operations'):
                 return []
             return [json.loads(r[0]) for r in db.execute('SELECT receipt FROM launcher_gm_operations ORDER BY rowid DESC LIMIT 80')]
+
+    def _shop(self):
+        from els_server.domain import shop_local_offers
+        shop_local_offers.configure(self.save.parent/'local-shop-offers.json')
+        return shop_local_offers
+
+    def shop_offers(self):
+        shop = self._shop()
+        return dict(offers=[dict(row) for row in shop.custom_offers()], path=str(shop.path()),
+                    max_price=shop.MAX_PRICE, max_quantity=shop.MAX_QUANTITY)
+
+    def shop_mutate(self, data):
+        if not isinstance(data, dict) or set(data) != {'operation_id', 'action', 'value', 'reason'}:
+            raise ValueError('商城操作参数不完整')
+        operation_id = data['operation_id']
+        if not isinstance(operation_id, str) or str(uuid.UUID(operation_id)) != operation_id:
+            raise ValueError('无效操作编号')
+        reason = data['reason']
+        if not isinstance(reason, str) or not 2 <= len(reason.strip()) <= 200:
+            raise ValueError('请输入 2–200 字的操作原因')
+        shop = self._shop()
+        value, action = data['value'], data['action']
+        if action == 'add':
+            if not isinstance(value, dict) or set(value) != {'template', 'price', 'quantity'}:
+                raise ValueError('请选择道具并填写价格和数量')
+            template = bounded_int(value['template'], 1, 2**31-1, '道具编号')
+            price = bounded_int(value['price'], 0, shop.MAX_PRICE, '价格')
+            quantity = bounded_int(value['quantity'], 1, shop.MAX_QUANTITY, '数量')
+            custom = {row['template'] for row in shop.custom_offers()}
+            if template in custom:
+                raise ValueError('该道具已在商城附加目录中')
+            from els_server.storage.shop_state import catalog
+            if template in {p['template'] for p in catalog()}-custom:
+                raise ValueError('该道具已在商城出售')
+            entry = shop.add(self.save, template, price, quantity,
+                             shop.DEFAULT_CATEGORY, reason.strip(), operation_id)
+            return dict(entry, message='已加入 ED 商城，重新打开商城即可看到')
+        if action == 'remove':
+            if not isinstance(value, dict) or set(value) != {'template'}:
+                raise ValueError('请选择要移出的道具')
+            template = bounded_int(value['template'], 1, 2**31-1, '道具编号')
+            entry = shop.remove(self.save, template, reason.strip(), operation_id)
+            return dict(entry, message='已移出 ED 商城')
+        raise ValueError('未知商城操作')
+
+    def item_options(self, template):
+        from els_server.domain.gm_item_options import spec
+        from els_server.game_data import client_data
+        template = bounded_int(template, 1, 2**31-1, '道具编号')
+        return dict(template=template, name=client_data().item(template)['name'], **spec(template))
+
+    def mail_queue(self):
+        from els_server.storage import gm_mail_queue
+        return gm_mail_queue.status(self.save)
+
+    def mail_item(self, data):
+        required = {'operation_id', 'uid', 'template', 'quantity', 'option_groups',
+                    'title', 'body', 'reason'}
+        if not isinstance(data, dict) or set(data) != required:
+            raise ValueError('邮件参数不完整')
+        operation_id = data['operation_id']
+        if not isinstance(operation_id, str) or str(uuid.UUID(operation_id)) != operation_id:
+            raise ValueError('无效操作编号')
+        uid = bounded_int(data['uid'], 1001, 2**53-1, '角色编号')
+        template = bounded_int(data['template'], 1, 2**31-1, '道具编号')
+        quantity = bounded_int(data['quantity'], 1, 99, '数量')
+        from els_server.domain.gm_item_options import apply
+        groups = apply(template, data['option_groups'])
+        texts = {}
+        for key, limit, label in (('title', 80, '标题'), ('body', 2000, '正文'), ('reason', 200, '原因')):
+            text = data[key]
+            if not isinstance(text, str) or not 2 <= len(text.strip()) <= limit:
+                raise ValueError(label+'格式无效')
+            texts[key] = text.strip()
+        with closing(self.connect()) as db:
+            if db.execute('SELECT 1 FROM characters WHERE uid=?', (uid,)).fetchone() is None:
+                raise ValueError('收件角色不存在')
+        from els_server.storage import gm_mail_queue
+        return gm_mail_queue.enqueue(self.save, dict(
+            operation_id=operation_id, uid=uid, template=template, quantity=quantity,
+            option_groups=groups, title=texts['title'], body=texts['body'],
+            reason=texts['reason'], sender='GM'))
 
     def _tutorial_start(self, data):
         from els_server.storage import tutorial_recovery as recovery
@@ -274,6 +410,23 @@ class LauncherService:
             message={'recovery_stale':'角色数据已变化，请刷新后重新确认','recovery_backup_failed':'存档备份未能完成，角色位置未修改','recovery_conflict':'操作编号冲突，请刷新角色列表'}.get(str(error),'此角色不满足恢复新手起点的条件')
             raise ValueError(message) from error
 
+    def _item_mail_fallback(self, operation_id, uid, value):
+        from els_server.domain.gm_item_catalog import plan as gm_item_plan
+        from els_server.domain.gm_item_options import apply
+        from els_server.game_data import client_data
+        from els_server.storage import gm_mail_queue
+        template, quantity = value.get('template'), value.get('quantity')
+        gm_item_plan(template, quantity)
+        groups = apply(template, value.get('option_groups'))
+        name = client_data().item(template)['name']
+        job = gm_mail_queue.enqueue(self.save, dict(
+            operation_id=operation_id, uid=uid, template=template, quantity=quantity,
+            option_groups=groups, title='GM 发放', body='管理员发放，请在邮件中领取。',
+            reason='GM 邮件发放：'+name, sender='GM'))
+        return dict(operation_id=operation_id, uid=uid, time=timestamp(), action='item',
+                    detail=f'在线邮件发放 {name} × {quantity}', backup='',
+                    message='游戏运行中，已转为邮件发放，请在游戏内邮箱领取', state=job['state'])
+
     def mutate(self, data):
         if not isinstance(data, dict) or set(data) != {'operation_id','uid','version','action','value'}:
             raise ValueError('操作参数不完整，请刷新后重试')
@@ -288,6 +441,8 @@ class LauncherService:
         digest = hashlib.sha256(json.dumps(data, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         with self.lock:
             if games() or self.phase in ('checking','starting','stopping') or self.process and self.process.poll() is None:
+                if action == 'item':
+                    return self._item_mail_fallback(operation_id, uid, value)
                 raise ValueError('请先正常退出游戏，GM 修改将在离线后解锁')
             try:
                 with SaveLease(self.save):
@@ -319,13 +474,16 @@ class LauncherService:
                                 if value == old_level:
                                     raise ValueError('目标等级与当前等级相同')
                             elif action == 'item':
-                                if not isinstance(value, dict) or set(value) != {'template','quantity'}:
+                                if (not isinstance(value, dict) or not {'template','quantity'} <= set(value)
+                                        or set(value)-{'template','quantity','option_groups'}):
                                     raise ValueError('请选择道具及数量')
                                 bounded_int(value['template'], 1, 2**31-1, '道具编号')
                                 bounded_int(value['quantity'], 1, 99, '道具数量')
                                 item = next((r for r in item_catalog() if r['id'] == value['template']), None)
                                 if item is None:
                                     raise ValueError('该道具尚未在当前服务端验证，不能发放')
+                                from els_server.domain.gm_item_options import apply as apply_options
+                                groups = apply_options(item['id'], value.get('option_groups'))
                             elif value != 20000:
                                 raise ValueError('目前仅开放已验证的魔奇回城位置')
                             backup = self._backup('before-'+action)
@@ -351,8 +509,16 @@ class LauncherService:
                             elif action == 'item':
                                 from els_server.storage.inventory_state import ensure_inventory, grant_items
                                 ensure_inventory(db)
-                                grant_items(db, [dict(template=item['id'], metadata=item['metadata'], group=item['group'], quantity=value['quantity'])], uid)
-                                detail = f'发放 {item["name"]} × {value["quantity"]}'
+                                from els_server.domain.gm_item_catalog import plan as gm_item_plan
+                                plan = gm_item_plan(item['id'], value['quantity'])
+                                grants = grant_items(db, [plan], uid)
+                                if groups:
+                                    from els_server.storage.equipment_options import replace
+                                    for granted in grants:
+                                        replace(db, uid, granted['uid'], granted.get('option_groups', {}), groups)
+                                    detail = f'发放 {item["name"]} × {value["quantity"]}（自定义属性）'
+                                else:
+                                    detail = f'发放 {item["name"]} × {value["quantity"]}'
                             else:
                                 db.execute('UPDATE location SET town=20000,board=0,progress=0,x=0,y=0,z=0,revision=revision+1 WHERE uid=?', (uid,))
                                 detail = '回到魔奇初始位置'
@@ -368,6 +534,11 @@ class LauncherService:
                             db.rollback()
                             raise
             except RuntimeError as e:
+                if action == 'item':
+                    try:
+                        return self._item_mail_fallback(operation_id, uid, value)
+                    except ValueError:
+                        pass
                 raise ValueError('存档正被服务端占用，请先正常退出游戏') from e
 
     def check(self):

@@ -182,7 +182,7 @@ if a.no_auto_entry:report['auto_dungeon_entry']=False
 dump_path=(profile if a.login_probe else out)/'x2-runtime.bin'
 log=(run/'trace.jsonl').open('w',encoding='utf8');dump=dump_path.open('rb' if a.login_probe else 'w+b');session=None
 try:
- session=frida.attach(proc.pid);clear_received_at=None;clear_sequence=0;login_hooks_ready=False;startup_inventory=None;startup_shop=None;startup_artifact=None
+ session=frida.attach(proc.pid);clear_received_at=None;clear_sequence=0;login_hooks_ready=False;startup_inventory=None;startup_shop=None;startup_artifact=None;option_dumps={'next':0}
  def receive(m,data):
   global clear_received_at,clear_sequence,login_hooks_ready,stack_adapter_failure
   log.write(json.dumps(m,ensure_ascii=True)+'\n');log.flush()
@@ -192,6 +192,13 @@ try:
   if v.get('event')=='native_lifecycle_packet' and v.get('kind')==0xc1 and v.get('result')==1:
    clear_received_at=time.monotonic();clear_sequence+=1
   if v.get('event')=='snapshot_chunk':dump.seek(v['offset']);dump.write(data)
+  if v.get('event')=='kom_index_dump' and data is not None:
+   name=str(v.get('name') or 'archive');path=run/('kom-index-'+name+'.bin');path.write_bytes(bytes(data));print('KOM_INDEX_DUMP: '+str(path),flush=True)
+  if v.get('event')=='option_table_dump' and data is not None:
+   index=option_dumps['next'];option_dumps['next']=index+1
+   path=run/('option-table-'+str(index)+'.bin');path.write_bytes(bytes(data))
+   (run/('option-table-'+str(index)+'.json')).write_text(json.dumps(v,ensure_ascii=True),encoding='utf8')
+   print('OPTION_TABLE_DUMP: '+str(path),flush=True)
   if v.get('event')=='snapshot_begin':dump.truncate(v['size']);report['base']=v['base'];report['size']=v['size']
  script=session.create_script("""
 const image=Process.getModuleByName(__MODULE_NAME__);
@@ -219,6 +226,7 @@ emit({event:'attached',base:image.base.toString(),size:image.size});
  fatal_observer=session.create_script((BASE/'tools/observe_native_fatal.js').read_text(encoding='utf8'));fatal_observer.on('message',receive);fatal_observer.load()
  initial_resources=session.create_script((BASE/'tools/observe_initial_resources.js').read_text(encoding='utf8'));initial_resources.on('message',receive);initial_resources.load()
  resource_dialogs=session.create_script((BASE/'tools/observe_resource_dialog.js').read_text(encoding='utf8'));resource_dialogs.on('message',receive);resource_dialogs.load()
+ option_observer=session.create_script((BASE/'tools/observe_option_table.js').read_text(encoding='utf8'));option_observer.on('message',receive);option_observer.load()
  if a.login_probe:
   # Resource compatibility gets installed before login hooks and optional observers.
   compatibility_scripts=[]

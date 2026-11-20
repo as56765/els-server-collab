@@ -51,6 +51,13 @@ def npc_initialization(catalog,template,hp):
  strings=native['strings'];init=struct.pack('>iB',template,0)+b''.join(wstring(s) for s in strings[:4])+b'\1'+b''.join(wstring(s) for s in strings[4:])
  return init+b''.join(attrs[o:o+4][::-1] for o in range(0,0x60,4))+bytes(2)
 
+@functools.lru_cache(maxsize=8192)
+def _script_controller(template):
+    # Summon/event controllers are script props, not player kill targets.
+    from els_server.game_data import client_data
+    script=(client_data().npc(template).get('script') or '').upper()
+    return 'SUMMON' in script or 'EVENT' in script
+
 class DungeonRun:
  def __init__(self,identity,run_id,*,clock=time.monotonic,internal=False):
   self.catalog=route_catalog();self.graph=self.catalog.graph(identity,internal=internal);self.identity=identity
@@ -139,8 +146,16 @@ class DungeonRun:
    keys=[n['key'] for n in npcs if n['key_code'] in c['required']]
    return bool(keys) and (any(k in dead for k in keys) if kind==2 else all(k in dead for k in keys))
   if kind==3:
-   required=[n['key'] for n in npcs if n['template'] in c['required']]
-   return bool(required) and all(k in dead for k in required)
+   required=[n for n in npcs if n['template'] in c['required']]
+   if not required:return False
+   if all(n['key'] in dead for n in required):return True
+   # Local policy: a source "door" actor spawned inactive is never sent to
+   # this client as a combat target, so its death report never arrives
+   # (dungeon_en_tunnel stage1/stage2 doors). Treat the gate as opened once
+   # the part's real combat actors are cleared instead.
+   if all(not n['active'] for n in required):
+    return all(n['key'] in dead for n in npcs if n['active'] and n.get('team',1)!=0 and not _script_controller(n['template']))
+   return False
   if kind==6:return self.started_at is not None and self.clock()-self.started_at>=c['seconds']
   return False
  def poll_ready(self):

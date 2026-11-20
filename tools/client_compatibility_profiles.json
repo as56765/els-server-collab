@@ -16,7 +16,7 @@
         "tools/local_startup_config_fix.js": "a7873b6c123eedfd968d6affd5c93af5cfbab2204eb3658d815f9b9a3a28866b",
         "tools/dx11_resource_compat.json": "a4a634b868573e27cdbfa8b3422a8a7b78ecc91857455dfbe1bf1b7bed95dd68",
         "tools/dx11_resource_compat.js": "c9c2a34beb9b60252a273ab45c6b6bdc938501292573da1d9eb964e3f3b6c192",
-        "tools/local_resource_index_compat.js": "77242ac9fd8109a81df11fb6dc4ef4cff396b74cc4925f9493c8ae717684192e",
+        "tools/local_resource_index_compat.js": "9218cb772ee8f83b48c9bc6e1d6448e3f4599e8f6f50be3368f8866702fd7e90",
         "els_server/data/client/manifest.json": "381cc3ba4a02b423ae82bd61f93e0dcbb454f911c806711e660442f888acf699",
         "els_server/data/client/catalog.sqlite3": "a633289850ef5b814aa338542e5f80e641153e99734c4f5c8c82f62bde49c3ba",
         "tools/launch_friends_client.py": "25190fa6a28f63975890017425af2cc648afa9d802f84f5858976658eac079d9",
@@ -25,7 +25,7 @@
         "tools/original_index_pins.json": "820694a58b1be584bd0474e0137ac3f40b5536a0850633228ac158e30663c729",
         "tools/launch_client.py": "74f5c5406c93b526e1bb34cac36c5eb4ef8eeca4fbc3292d05c5de8f18f08142",
         "tools/launch_integrated_local.py": "20f08deac91b07950af1bbcdbfb451d1f96ad4b8f0c698f513c3d937dd696db3",
-        "tools/probe_updated_client.py": "b4a7a70116b29af9c7af29aab2fff3e6d4521974e17b70bb649ebf6fb49aa811"
+        "tools/probe_updated_client.py": "3ac0790e632841b262f3262c45d17006d1438d6aa38ff66f458ac39f32bf7382"
       },
       "evidence": [
         "mail-level99-life-20261016-v1/5344266e/537 formal snapshot and matched V6 runtime; gameplay acceptance remains separately recorded"

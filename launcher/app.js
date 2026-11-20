@@ -91,10 +91,102 @@ async function loadItems(){
 }
 function renderItemSelection(){
  const form=$('#item-selection');if(!form)return;
- form.innerHTML=chosenItem?`<div><p class="eyebrow">已选道具</p><h3>${esc(chosenItem.name)}</h3><p>ID ${chosenItem.id} · ${esc(chosenItem.bag)}</p></div><div><label class="field-label" for="item-quantity">发放数量</label><input class="input" type="number" id="item-quantity" name="amount" min="1" max="99" step="1" value="1" required inputmode="numeric"></div><p class="field-error" aria-live="polite"></p><button class="button primary" data-write>预览发放 ${icon('arrow')}</button>`:`<p class="eyebrow">发放预览</p><h3>先选择一件道具</h3><p>点击左侧的搜索结果，再填写数量。</p>`;
+ form.innerHTML=chosenItem?`<div><p class="eyebrow">已选道具</p><h3>${esc(chosenItem.name)}</h3><p>ID ${chosenItem.id} · ${esc(chosenItem.bag)}</p></div><div><label class="field-label" for="item-quantity">发放数量</label><input class="input" type="number" id="item-quantity" name="amount" min="1" max="99" step="1" value="1" required inputmode="numeric"></div><p class="field-error" aria-live="polite"></p><button class="button primary" data-write>预览发放 ${icon('arrow')}</button><div class="shop-add"><p class="eyebrow">商城上架</p><div class="field-row"><label class="field-label" for="shop-price">价格 (ED)</label><input class="input" id="shop-price" type="number" min="0" max="1000000000" step="1" value="1" inputmode="numeric"><label class="field-label" for="shop-quantity">每包数量</label><input class="input" id="shop-quantity" type="number" min="1" max="1000" step="1" value="1" inputmode="numeric"></div><button class="button outlined" type="button" id="shop-add">加入 ED 商城</button><p class="field-error" id="shop-error" aria-live="polite"></p></div><div id="shop-offers"></div><div class="shop-add"><p class="eyebrow">属性预设</p><div id="item-option-box">正在读取…</div><label class="field-label" for="mail-quantity">邮件数量</label><input class="input" id="mail-quantity" type="number" min="1" max="99" value="1" inputmode="numeric"><label class="field-label" for="mail-title">邮件标题</label><input class="input" id="mail-title" value="GM 发放" maxlength="80"><label class="field-label" for="mail-body">邮件正文</label><textarea class="input" id="mail-body" rows="2" maxlength="2000">管理员发放，请在邮件中领取。</textarea><button class="button primary" type="button" id="mail-send">邮件发放（在线领取）</button><p class="field-error" id="mail-error" aria-live="polite"></p></div><div id="mail-queue"></div>`:`<p class="eyebrow">发放预览</p><h3>先选择一件道具</h3><p>点击左侧的搜索结果，再填写数量。</p>`;
  applyState();
+ const add=$('#shop-add');
+ if(add)add.onclick=async()=>{
+  const error=$('#shop-error');error.textContent='';
+  const price=Number($('#shop-price').value),quantity=Number($('#shop-quantity').value);
+  if(!Number.isInteger(price)||price<0||price>1000000000){error.textContent='价格需为 0–10 亿的整数';return;}
+  if(!Number.isInteger(quantity)||quantity<1||quantity>1000){error.textContent='每包数量需为 1–1000';return;}
+  add.disabled=true;
+  try{await api('shop',{operation_id:crypto.randomUUID(),action:'add',reason:'GM 商城上架：'+chosenItem.name,value:{template:chosenItem.id,price,quantity}});toast('已加入 ED 商城');await loadShopOffers();}
+  catch(e){error.textContent=e.message;}
+  finally{add.disabled=false;}
+ };
+ loadShopOffers();
+ if(chosenItem)loadItemOptions(chosenItem.id);
+ const mail=$('#mail-send');
+ if(mail)mail.onclick=async()=>{
+  const error=$('#mail-error');error.textContent='';
+  if(!chosenItem)return;
+  const quantity=Number($('#mail-quantity').value);
+  if(!Number.isInteger(quantity)||quantity<1||quantity>99){error.textContent='邮件数量需为 1–99';return;}
+  mail.disabled=true;
+  try{
+   const result=await api('mail',{operation_id:crypto.randomUUID(),uid:role().uid,template:chosenItem.id,
+    quantity,option_groups:chosenOptions(),title:$('#mail-title').value,body:$('#mail-body').value,
+    reason:'GM 邮件发放：'+chosenItem.name});
+   toast(result.state==='done'?'邮件已投递，请在游戏内邮箱领取':'已加入发放队列，服务端运行时会自动投递');
+   await loadMailQueue();
+  }catch(e){error.textContent=e.message;}
+  finally{mail.disabled=false;}
+ };
+ loadMailQueue();
 }
-async function loadInventory(uid,e){try{const rows=await api('inventory?uid='+uid);if(e!==epoch||page!=='gm'||tab!=='inventory')return;$('#gm-tab').innerHTML=rows.length?`<p class="subheading" style="margin:0 0 15px">${rows.length} 个格位 · 背包及穿戴信息只读查看</p><div class="table-wrap"><table><thead><tr><th>道具</th><th>道具 ID</th><th>数量</th><th>分类</th><th>格位</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.template}</td><td>${x.count}</td><td>${esc(x.bag)}</td><td>${x.slot}</td></tr>`).join('')}</tbody></table></div>`:empty('背包中还没有物品。');}catch(err){if(e===epoch&&$('#gm-tab'))$('#gm-tab').innerHTML=empty(esc(err.message),'warning');}}
+async function loadItemOptions(template){
+ const box=$('#item-option-box');if(!box)return;
+ box.innerHTML='正在读取属性…';
+ try{
+  const spec=await api('item-options?template='+template);
+  if(spec.kind==='choice'){
+   box.innerHTML=`<label class="field-label" for="item-option">属性</label><select class="input" id="item-option"><option value="">不指定（默认/随机）</option>${spec.choices.map(c=>`<option value="${c.id}">${esc(c.label)}</option>`).join('')}</select>`;
+  }else if(spec.kind==='grid'){
+   box.innerHTML='<p class="subheading" style="margin:0">该防具电路需要 16 格属性网格，请在游戏内安装电路。</p>';
+  }else{
+   box.innerHTML=`<label class="field-label" for="item-option-json">option_groups JSON（可选）</label><textarea class="input" id="item-option-json" rows="2" placeholder='{"1":[100840000]}'></textarea>`;
+  }
+ }catch(e){box.innerHTML=`<p class="field-error">${esc(e.message)}</p>`;}
+}
+function chosenOptions(){
+ const select=$('#item-option');
+ if(select){return select.value?{'1':[Number(select.value)]}:null;}
+ const json=$('#item-option-json');
+ if(json&&json.value.trim()){
+  try{return JSON.parse(json.value);}catch{throw Error('属性 JSON 格式无效');}
+ }
+ return null;
+}
+async function loadMailQueue(){
+ const box=$('#mail-queue');if(!box)return;
+ try{
+  const data=await api('mail');
+  const rows=[...data.failed.map(x=>({state:'失败',...x})),...data.queued.map(x=>({state:'排队中',...x})),...data.done.map(x=>({state:'已投递',...x}))];
+  box.innerHTML=rows.length?`<p class="subheading">GM 邮件记录</p><div class="history-list">${rows.slice(0,6).map(x=>`<div class="history-entry">${icon('info')}<div><strong>${x.state} · 道具 #${x.template}${x.quantity?' × '+x.quantity:''}</strong><small>${esc(x.title||x.error||'')} · 角色 UID ${x.uid||'-'}</small></div></div>`).join('')}</div>`:'';
+ }catch(e){box.innerHTML=`<p class="field-error">${esc(e.message)}</p>`;}
+}
+async function loadShopOffers(){
+ const box=$('#shop-offers');if(!box)return;
+ try{
+  const data=await api('shop');const rows=data.offers;
+  box.innerHTML=rows.length?`<p class="subheading">当前商城附加道具</p><div class="history-list">${rows.map(o=>`<div class="history-entry">${icon('coin')}<div><strong>${esc(o.name)}</strong><small>${number(o.price)} ED / 每包 ${o.quantity} 个 · ID ${o.template}</small></div><button class="button subtle" type="button" data-shop-remove="${o.template}">移出</button></div>`).join('')}</div>`:'';
+  box.querySelectorAll('[data-shop-remove]').forEach(b=>b.onclick=async()=>{
+   b.disabled=true;
+   try{await api('shop',{operation_id:crypto.randomUUID(),action:'remove',reason:'GM 商城下架',value:{template:Number(b.dataset.shopRemove)}});toast('已移出 ED 商城');await loadShopOffers();}
+   catch(e){toast(e.message);b.disabled=false;}
+  });
+ }catch(e){box.innerHTML=`<p class="field-error">${esc(e.message)}</p>`;}
+}
+async function loadInventory(uid,e){
+ try{
+  const rows=await api('inventory?uid='+uid);
+  const scrolls=await api('scrolls?uid='+uid);
+  if(e!==epoch||page!=='gm'||tab!=='inventory')return;
+  const box=$('#gm-tab');
+  const picker=scrolls.length?`<label class="field-label" for="scroll-select" style="display:inline-block;margin-left:10px">强化卷轴 <select class="input" id="scroll-select">${scrolls.map(s=>`<option value="${s.template}">${esc(s.name)} ×${s.count}</option>`).join('')}</select></label>`:'<span class="tiny" style="margin-left:10px">背包中没有已注册的强化卷轴</span>';
+  box.innerHTML=rows.length?`<p class="subheading" style="margin:0 0 15px">${rows.length} 个格位 · 只读查看；对可强化装备使用卷轴（扣 1 张，在线生效）${picker}</p><div class="table-wrap"><table><thead><tr><th>道具</th><th>道具 ID</th><th>数量</th><th>分类</th><th>格位</th><th>强化</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.name)}</td><td>${x.template}</td><td>${x.count}</td><td>${esc(x.bag)}</td><td>${x.slot}</td><td>${x.enhanceable?`+${x.enhancement||0} <button class="button subtle" type="button" data-scroll-use="${x.uid}">用卷轴强化</button>`:'-'}</td></tr>`).join('')}</tbody></table></div>`:empty('背包中还没有物品。');
+  box.querySelectorAll('[data-scroll-use]').forEach(b=>b.onclick=async()=>{
+   const select=$('#scroll-select');
+   if(!select)return;
+   b.disabled=true;
+   try{
+    await api('scroll-use',{operation_id:crypto.randomUUID(),uid:role().uid,item_uid:Number(b.dataset.scrollUse),scroll:Number(select.value),reason:'GM 使用强化卷轴'});
+    toast('已提交使用卷轴，服务端运行时会立即生效');
+    setTimeout(()=>loadInventory(uid,e),1500);
+   }catch(err){toast(err.message,true);b.disabled=false;}
+  });
+ }catch(err){if(e===epoch&&$('#gm-tab'))$('#gm-tab').innerHTML=empty(esc(err.message),'warning');}
+}
 async function loadHistory(uid,e){try{const data=await api('history');if(e!==epoch||page!=='gm'||tab!=='history')return;const rows=data.filter(x=>x.uid===uid);$('#gm-tab').innerHTML=rows.length?`<div class="history-list">${rows.map(x=>`<div class="history-entry">${icon('check')}<div><strong>${esc(x.detail)}</strong><small>${esc(x.time.replace('T',' ').slice(0,19))} · UID ${x.uid}<br>自动备份：${esc(x.backup)}</small></div></div>`).join('')}</div>`:empty('还没有此角色的 GM 操作记录。','clock');}catch(err){if(e===epoch&&$('#gm-tab'))$('#gm-tab').innerHTML=empty(esc(err.message),'warning');}}
 
 async function renderBackups(e){const rows=await api('backups');if(e!==epoch)return;main.innerHTML=heading('每一段进度，都值得保留。','备份包含全部角色、资产和当前存档记录。',`<button class="button primary" data-action="backup">${icon('backup')}立即备份</button>`)+`<div class="notice">${icon('info')}<div>GM 修改前会自动创建备份；也可以手动留下当前进度。备份使用 SQLite 完整备份方式，游戏运行时同样可用。</div></div><section class="panel"><div class="panel-head"><h2>备份记录 <small>${rows.length} 份</small></h2><button class="button text" data-folder="backups">打开备份目录 ${icon('folder')}</button></div>${rows.length?`<div class="table-wrap"><table><thead><tr><th>备份文件</th><th>时间</th><th>大小</th><th>类型</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.time.replace('T',' ').slice(0,19))}</td><td>${number(Math.ceil(x.size/1024))} KB</td><td><span class="badge ${x.name.includes('manual')?'':'partial'}">${x.name.includes('manual')?'手动备份':'修改前备份'}</span></td></tr>`).join('')}</tbody></table></div>`:empty('还没有备份，点击右上角留下一份进度。','backup')}</section><div class="mini-banner">${icon('gm')}恢复备份需要完全退出游戏和服务端。当前版本提供备份与目录查看，暂未开放一键覆盖恢复。</div>`;}
