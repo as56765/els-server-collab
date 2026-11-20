@@ -242,8 +242,14 @@ for _material in equipment_ui_materials().values():
  VERIFIED_TEMPLATES[_material['template']]=_material['metadata']
  TEMPLATE_BAG_GROUPS[_material['template']]=_material['group']
  TEMPLATE_MAX_STACKS[_material['template']]=_material['max_stack']
-from els_server.domain.identification_ui import catalog as identification_ui_catalog
-for _material in identification_ui_catalog()['materials'].values():
+from els_server.domain.identification_ui import reset_materials as identification_reset_materials
+for _material in identification_reset_materials().values():
+ VERIFIED_TEMPLATES[_material['template']]=_material['metadata']
+ TEMPLATE_BAG_GROUPS[_material['template']]=_material['group']
+ TEMPLATE_MAX_STACKS[_material['template']]=_material['max_stack']
+
+from els_server.domain.skill_trait_reset import reset_items as skill_trait_reset_items
+for _material in skill_trait_reset_items().values():
  VERIFIED_TEMPLATES[_material['template']]=_material['metadata']
  TEMPLATE_BAG_GROUPS[_material['template']]=_material['group']
  TEMPLATE_MAX_STACKS[_material['template']]=_material['max_stack']
@@ -520,6 +526,12 @@ for _t in existing_erp_potions:
  TEMPLATE_BAG_GROUPS[_t]=4
  TEMPLATE_MAX_STACKS[_t]=1  # disable ordinary split/merge; not a native stack cap
 
+from els_server.domain.weapon_growth import material_readers as _growth_material_readers
+for _r in _growth_material_readers():
+ _t=_r['template']
+ VERIFIED_TEMPLATES[_t]=_r['metadata']
+ TEMPLATE_BAG_GROUPS[_t]=_r['group'];TEMPLATE_MAX_STACKS[_t]=_r['max_stack']
+
 def validate_item(item):
  if isinstance(item,dict) and item.get('template')in range(136161,136172):
   from els_server.domain.fish_exchange_erp import _IssuedPotion,validate_issued
@@ -556,7 +568,13 @@ def validate_item(item):
   equipped=life_equipped(item)
  from els_server.domain.bag_capacity import wire_limit
  bag=item['group']==TEMPLATE_BAG_GROUPS[item['template']] and 0<=item['slot']<wire_limit(item['group'])
- if not 1<=item['count']<=TEMPLATE_MAX_STACKS[item['template']] or not (equipped or bag):raise ValueError('Invalid local inventory count/slot')
+ read_limit=TEMPLATE_MAX_STACKS[item['template']]
+ # Read-only forward compatibility for the exact existing essence instance.
+ # grant_items still uses the original global singleton allocation/merge cap.
+ if (item['template'],item['metadata'],item['group'])==(130208,2,4):
+  if (hashlib.sha256(definition['record']).hexdigest(),definition['item_type'],definition['metadata'],struct.unpack_from('<I',definition['record'],0x10)[0])!=('def908d624a81559b11442227ffde76f36174a71b6ca42d82d35f89ed02e4cb1',7,2,1000):raise ValueError('Saved130208 reader source changed')
+  read_limit=1000
+ if not 1<=item['count']<=read_limit or not (equipped or bag):raise ValueError('Invalid local inventory count/slot')
  result=dict(item)
  if 'cartridge'in item:
   from els_server.domain.cartridge_registration_rules import scalar,binding_catalog
@@ -606,7 +624,10 @@ def validate_item(item):
  validate_reforge(result)
  if 'identified' in item:
   from els_server.domain.identification_ui import require_template
-  require_template(item['template'])
+  if item['template']==30603 and item['identified']is True:
+   from els_server.domain.identification_ui import validate as validate_saved30603
+   validate_saved30603(30603,item.get('option_groups',{}).get('1',[]))
+  else:require_template(item['template'])
   if type(item['identified']) is not bool or item['count']!=1:raise ValueError('Invalid identification flag/count')
   if not item['identified']:
    from els_server.domain.artifact_identification import supported,unidentified_values
@@ -641,7 +662,11 @@ def item_body(item):
   elif off==12 and 'enhancement' in item:struct.pack_into('>b',data,wire,item['enhancement'])
   elif off==0x3a8 and 'enhancement_gauge' in item:struct.pack_into('>i',data,wire,item['enhancement_gauge'])
   elif off==0x3ac and 'enhancement_guarantee' in item:struct.pack_into('>i',data,wire,item['enhancement_guarantee'])
-  elif off==0x34d and 'identified' in item:data[wire]=0 if item['identified'] else 2
+  elif off==0x34d:
+   if 'identified'in item:data[wire]=0 if item['identified']else 2
+   else:
+    from els_server.domain.identification_ui import initial_pending
+    if initial_pending(item):data[wire]=2
   elif off==0x3a7 and 'artifact_socket_open' in item:data[wire]=int(item['artifact_socket_open'])
   elif 0x3b0<=off<=0x3b3 and 'chip_tuning' in item:data[wire]=item['chip_tuning'][off-0x3b0]
   elif off in (0x397,0x39b,0x39f) and 'reforge' in item:struct.pack_into('>i',data,wire,item['reforge'][(off-0x397)//4])
@@ -657,11 +682,15 @@ def item_body(item):
   pos=field['wire_offset'];raw=date_string(item['expires_at']).encode('utf-16le')
   if data[pos:pos+4]!=bytes(4):raise ValueError('Native expiry string seed changed')
   data[pos:pos+4]=struct.pack('>I',len(raw))+raw
- if item.get('option_groups'):
+ # Derive unlocks on each outgoing instance, including old saves and ACKs.
+ from els_server.domain.enhancement_unlock import options as unlock_options
+ groups=dict(item.get('option_groups',{}))
+ unlocked=unlock_options(item['template'],item.get('enhancement',0))
+ if unlocked:groups['3']=unlocked
+ if groups:
   field=next(f for f in c['fields'] if int(f['offset'],0)==0x25)
   pos=field['wire_offset']
   if data[pos:pos+136]!=struct.pack('>I',33)+bytes(132):raise ValueError('Native socket array seed changed')
-  groups=item['option_groups']
   data[pos:pos+136]=struct.pack('>I',33)+b''.join(struct.pack('>I',len(groups.get(str(n),[])))+b''.join(struct.pack('>i',v) for v in groups.get(str(n),[])) for n in range(33))
  if any(item.get('attributes',())):
   field=next(f for f in c['fields'] if int(f['offset'],0)==0xd)
@@ -794,6 +823,70 @@ _life_potion=_life_potion_data().item(135953)
 if (hashlib.sha256(_life_potion['record']).hexdigest()!='77c91092e1ed47958b423f0a3d8123f9f5eae59a2987e49b935e8f6dd2011650' or (_life_potion['item_type'],_life_potion['metadata'],_life_potion['flags4'],_life_potion['flags8'],struct.unpack_from('<I',_life_potion['record'],0x10)[0])!=(7,2,573575178,56,300)):raise ValueError('Original25602 reward reader source')
 if 135953 in VERIFIED_TEMPLATES and (VERIFIED_TEMPLATES[135953],TEMPLATE_BAG_GROUPS[135953],TEMPLATE_MAX_STACKS[135953])!=(2,4,300):raise ValueError('Conflicting original25602 reward reader')
 VERIFIED_TEMPLATES[135953]=2;TEMPLATE_BAG_GROUPS[135953]=4;TEMPLATE_MAX_STACKS[135953]=300
+
+# Exact existing El Essence: current KIM stack1000; old quest reward singleton
+# was a bounded issuance amount, not this item's native stacking limit.
+_essence=_smith_client_data().item(130208)
+if (hashlib.sha256(_essence["record"]).hexdigest(),_essence["item_type"],_essence["metadata"],struct.unpack_from("<I",_essence["record"],0x10)[0])!=("def908d624a81559b11442227ffde76f36174a71b6ca42d82d35f89ed02e4cb1",7,2,1000):raise ValueError("Current El Essence source")
+if (VERIFIED_TEMPLATES[130208],TEMPLATE_BAG_GROUPS[130208])!=(2,4):raise ValueError("El Essence inventory classification")
+TEMPLATE_MAX_STACKS[130208]=1000
+
+# Eight exact current Ariel reward/coupon readers. Keep all established tuples.
+from els_server.domain.ariel_attendance_rules import definitions as ariel_attendance_definitions
+for _t,_r in ariel_attendance_definitions().items():
+ _expected=(_r['metadata'],_r['group'],_r['max_stack'])
+ # Keep the newly accepted consumable provider's exact721053 tuple999.
+ # The unchanged pinned Ariel/native record still proves its native500.
+ if _t==721053 and _expected==(2,6,500) and (VERIFIED_TEMPLATES.get(_t),TEMPLATE_BAG_GROUPS.get(_t),TEMPLATE_MAX_STACKS.get(_t))==(2,6,999):continue
+ if _t in VERIFIED_TEMPLATES and (VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t])!=_expected:raise ValueError('Conflicting Ariel item reader')
+ VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t]=_expected
+
+# Exact ordinary daily-special readers; preserve every established tuple.
+from els_server.domain.ariel_daily_special_rules import definitions as ariel_daily_definitions
+for _t,_r in ariel_daily_definitions().items():
+ _expected=(_r['metadata'],_r['group'],_r['max_stack'])
+ if _t in VERIFIED_TEMPLATES and (VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t])!=_expected:raise ValueError('Conflicting daily-special item reader')
+ VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t]=_expected
+
+# Exact existing-owned Mystic stone readers. Preserve established stack rules.
+from els_server.domain.spell_socket_rules import definitions as _mystic_fill_definitions
+for _row in _mystic_fill_definitions():
+ _t=_row['template']
+ if _t in VERIFIED_TEMPLATES:
+  if (VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t])!=(_row['metadata'],_row['group']):raise ValueError('Conflicting original mystic stone reader')
+ else:
+  VERIFIED_TEMPLATES[_t]=_row['metadata'];TEMPLATE_BAG_GROUPS[_t]=_row['group'];TEMPLATE_MAX_STACKS[_t]=_row['max_stack']
+
+
+from els_server.domain.silver_mirror_catalog import definitions as _mirror_definitions
+for _row in _mirror_definitions():
+ _t=_row['template'];_expected=(_row['metadata'],_row['group'],_row['max_stack'])
+ if _t in VERIFIED_TEMPLATES and (VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t])!=_expected:raise ValueError('Conflicting Mirror native item')
+ VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t]=_expected
+
+# Exact original48 T readers reuse the already verified circuit generator.
+# Registration itself does not qualify a new raid reward source.
+from els_server.domain.equipment_circuit_rules import catalog as circuit_inventory_catalog
+for _circuit in circuit_inventory_catalog()['materials'].values():
+ _t=_circuit['template'];_expected=(_circuit['metadata'],_circuit['registered_group'],_circuit['max_stack'])
+ if _t in VERIFIED_TEMPLATES and (VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t])!=_expected:raise ValueError('Conflicting original circuit material reader')
+ VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t]=_expected
+
+# Finite original raid readers. Actual new production requires a typed phase
+# or owned-box source in the same writer; no generic grant is enabled here.
+from els_server.domain.raid_reward_items import definitions as raid_reward_reader_definitions
+for _raid_reader in raid_reward_reader_definitions():
+ _t=_raid_reader['template'];_expected=tuple(_raid_reader[k]for k in('metadata','group','max_stack'))
+ if _t in VERIFIED_TEMPLATES and (VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t])!=_expected:raise ValueError('Conflicting original raid reader')
+ VERIFIED_TEMPLATES[_t],TEMPLATE_BAG_GROUPS[_t],TEMPLATE_MAX_STACKS[_t]=_expected
+
+# Five current native material bundles. Their producer and original owned-use
+# consumer are qualified together; generic acquisition stays source-closed.
+from els_server.domain.formal_pve_economy import policy as native_ordinary_bundle_policy
+for _bundle_id in native_ordinary_bundle_policy()['new_reader_ids']:
+ _bundle=native_ordinary_bundle_policy()['items'][str(_bundle_id)];_expected=tuple(_bundle[k]for k in('metadata','group','max_stack'))
+ if _bundle_id in VERIFIED_TEMPLATES and(VERIFIED_TEMPLATES[_bundle_id],TEMPLATE_BAG_GROUPS[_bundle_id],TEMPLATE_MAX_STACKS[_bundle_id])!=_expected:raise ValueError('Conflicting native ordinary bundle reader')
+ VERIFIED_TEMPLATES[_bundle_id],TEMPLATE_BAG_GROUPS[_bundle_id],TEMPLATE_MAX_STACKS[_bundle_id]=_expected
 
 # Owner-requested local +13 enhancement scrolls; the use chain lives in
 # els_server.storage.enhancement_scroll and adds no other acquisition source.

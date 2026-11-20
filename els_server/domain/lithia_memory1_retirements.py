@@ -4,6 +4,7 @@ The client runs scenes and retires actors. This adapter only authenticates the
 report, commits its existing quest event, and acknowledges the resolved actor.
 It never grants combat EXP/loot or substitutes a timer for a source condition.
 """
+from els_server.domain.formal_npc_hp import initialized_maximum
 import copy
 import struct
 
@@ -39,7 +40,8 @@ def handle(s,event,report):
     for npc in run.current['npcs']:
         expected=CONTROLLERS.get(npc['template'])
         if expected is None:continue
-        key,hp,active=expected
+        key,legacy_hp,active=expected
+        hp=initialized_maximum(run,npc)
         if (npc['key']==key and npc['start_point']==1 and npc['hp']==hp
                 and npc['active'] is active and not npc.get('dynamic')
                 and not npc.get('ally') and npc.get('team',1)==1
@@ -120,13 +122,13 @@ def later(s,event,report):
             or frozenset(getattr(s,'dungeon_participants',(owner,)))!=frozenset((owner,))
             or s.account.character()['unit_type']!=15):return []
     if (npc['key']!=rule['key'] or npc['start_point']!=rule['start_point']
-            or npc['hp']!=rule['hp'] or npc['active'] is not rule['active']
+            or npc['hp']!=initialized_maximum(run,npc) or npc['active'] is not rule['active']
             or npc.get('dynamic') or npc.get('ally') or npc.get('team',1)!=1
             or run.catalog.manifest['source_sha256'].get(rule['script'])!=rule['script_sha256']
             or report['status']!=1 or report['source']!=2**64-1 or report['killer']!=2**64-1
             or report['extra_uid']!=0 or report['last_uid'] not in (0,2**64-4)
             or report['contribution'] or report['counters'] or report['readiness']!={owner:0}
-            or report['hp_bits']!=struct.unpack('>I',struct.pack('>f',rule['hp']))[0]):return []
+            or report['hp_bits']!=struct.unpack('>I',struct.pack('>f',initialized_maximum(run,npc)))[0]):return []
     key=npc['key']
     from els_server.domain.dungeon_lifecycle import death_ack,empty_reward_death_notice
     previous=run.defeated.get(key)

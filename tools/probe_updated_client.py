@@ -94,7 +94,7 @@ profile=Path(selection['native_directory']) if selection else BASE/'analysis'/('
 if a.login_probe:
  # Complete disk verification BEFORE starting the client, so hashing cannot
  # delay installation while its native resource initialization is running.
- snapshot=(profile/'x2-runtime.bin').read_bytes()
+ snapshot=(profile/'native-prefixes.bin').read_bytes()
  prepared_sources=prepare_native_sources(snapshot,client.parent,a.allow_client_variants,a.local_resource_index)
  from local_stack_limits import source as local_stack_source
  prepared_sources['stack_limits']=local_stack_source(snapshot)
@@ -179,7 +179,7 @@ report['native_reference_profile']=str(profile) if a.login_probe else None
 report['client_compatibility']=selection['report'] if selection else None
 if a.no_auto_entry:report['auto_dungeon_entry']=False
 (run/'client-process.json').write_text(json.dumps(report),encoding='utf8')
-dump_path=(profile if a.login_probe else out)/'x2-runtime.bin'
+dump_path=(profile if a.login_probe else out)/'native-prefixes.bin'
 log=(run/'trace.jsonl').open('w',encoding='utf8');dump=dump_path.open('rb' if a.login_probe else 'w+b');session=None
 try:
  session=frida.attach(proc.pid);clear_received_at=None;clear_sequence=0;login_hooks_ready=False;startup_inventory=None;startup_shop=None;startup_artifact=None;option_dumps={'next':0}

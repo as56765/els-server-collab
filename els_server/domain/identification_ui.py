@@ -29,13 +29,34 @@ def catalog():
   selected={r['option'] for r in pool['outcomes']}
   if not isinstance(legacy,list) or any(type(v) is not int for v in legacy) or len(legacy)!=3 or set(legacy)!=expected or len(selected)!=45 or selected&expected or set(pool['options'])!={str(v) for v in selected|expected}:raise ValueError('Identification selected and historical options')
  return c
+@functools.lru_cache(maxsize=1)
+def reset_materials():
+ raw=(Path(__file__).resolve().parents[1]/'data/identification_reset_items.json').read_bytes()
+ if hashlib.sha256(raw).hexdigest()!='4513ec04bb08d953980ab2859d5411e28815c96edfcf3434ea23a0ef3bba96d9':raise ValueError('Identification reset alias identity')
+ rows=json.loads(raw)
+ for row in rows.values():
+  original=client_data().item(row['template'])
+  if (hashlib.sha256(original['record']).hexdigest()!=row['record_sha256'] or original['metadata']!=row['metadata']
+      or (original['flags8']>>3)&31!=7 or row['group']!=4
+      or row['max_stack']!=int.from_bytes(original['record'][16:20],'little')):raise ValueError('Identification reset original alias')
+ return {**catalog()['materials'],**rows}
+
 def template_pool(template):
  c=catalog();row=c['templates'].get(str(template))
  if row is None or 'pool' not in row:return None
  pool=c['pools'][row['pool']]
  if row['groups']!=[pool['native_group']] or row['official_group']!=pool['official_group']:raise ValueError('Identification template pool mismatch')
  return pool
+def initial_pending(item):
+ from els_server.domain.accessory_identification import initial_pending as accessory_pending
+ from els_server.domain.boosting_gear_identification import initial_pending as activity_pending
+ return accessory_pending(item) or activity_pending(item)
+
 def require_template(template):
+ from els_server.domain.boosting_gear_identification import supported as activity_supported,catalog as activity_catalog
+ if activity_supported(template):activity_catalog();return
+ from els_server.domain.accessory_identification import supported
+ if supported(template):return
  from els_server.domain.artifact_identification import supported
  if supported(template):return
  if str(template) not in catalog()['templates']:
@@ -45,6 +66,10 @@ def slot_count(template):
  row=catalog()['templates'].get(str(template))
  return row.get('identify_slots',1) if row else 1
 def validate(template,values):
+ from els_server.domain.boosting_gear_identification import supported as activity_supported,validate as activity_validate
+ if activity_supported(template):return activity_validate(template,values)
+ from els_server.domain.accessory_identification import supported,validate as accessory_validate
+ if supported(template):return accessory_validate(template,values)
  from els_server.domain.artifact_identification import supported,validate as artifact_validate
  if supported(template):return artifact_validate(template,values)
  require_template(template)

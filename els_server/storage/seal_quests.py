@@ -131,7 +131,11 @@ def _state(db,uid,items):
                 counts[s['m_iID']]=min(target(s),a[0] if a else 0)
         active.append(dict(id=q,owner=erp_scope.quest_owner(db,uid,q),accepted_at=at,generation=g,objectives=counts,**({'projection_owner':uid} if q in (25600,25601,25602) else {})))
     done=[dict(id=q,completed_at=at) for q,at in erp_scope.completed_rows(db,uid)]
-    return dict(active=active,completed=done)
+    state=dict(active=active,completed=done)
+    from els_server.storage.weapon_growth import snapshot as weapon_growth_snapshot
+    growth=weapon_growth_snapshot(db,uid,items)
+    if growth['item_active'] or growth['item_completed']:state.update(growth)
+    return state
 
 class QuestState:
     def __init__(self,path,uid=1001,*,account_id=None,account_source_guard=None):
@@ -161,15 +165,24 @@ class QuestState:
             return frozenset(s['m_eClearType'] for qid,at,g,raw in erp_scope.active_rows(db,self.uid)
                              for s in quest_catalog().objectives(qid))
 
-    def collection_snapshot(self):
+    def collection_snapshot(self,*,include_growth=False):
         """Read one consistent view without creating tables or taking a writer lock."""
         with closing(sqlite3.connect(self.path,timeout=10)) as db,db:
             db.execute('BEGIN');load_character(db,self.uid,self.account_id)
-            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_quests'").fetchone():return []
-            identities={qid for qid,at,g,raw in erp_scope.active_rows(db,self.uid)
+            present=db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='character_quests'").fetchone()
+            identities={qid for qid,at,g,raw in (erp_scope.active_rows(db,self.uid) if present else ())
                         if any(s['m_eClearType'] in (3,31,38,80,81,110,121) for s in quest_catalog().objectives(qid))}
-            if not identities:return []
-            return [row for row in _state(db,self.uid,load_items(db,self.uid))['active'] if row['id'] in identities]
+            if not identities and not include_growth:return []
+            from els_server.domain.weapon_growth import templates as growth_templates
+            if not identities and not db.execute('SELECT 1 FROM inventory_items WHERE owner=? AND template IN ('+
+                    ','.join('?' for _ in growth_templates())+') LIMIT 1',(self.uid,*sorted(growth_templates()))).fetchone():
+                return [],dict(item_active=[],item_completed=[])
+            items=load_items(db,self.uid)
+            state=_state(db,self.uid,items) if identities else None
+            rows=[row for row in state['active'] if row['id'] in identities] if identities else []
+            if not include_growth:return rows
+            from els_server.storage.weapon_growth import snapshot as growth_snapshot
+            return rows,({k:state.get(k,[]) for k in ('item_active','item_completed')} if state is not None else growth_snapshot(db,self.uid,items))
 
     def action(self,kind,request,operation_id,encode,*,now=None,location=None,transaction=None):
         if kind not in ('accept','abandon','claim'):raise ValueError('Quest action')
@@ -204,7 +217,7 @@ class QuestState:
             items=load_items(db,uid);before=_state(db,uid,items);active=next((r for r in before['active'] if r['id']==qid),None)
             done=next((r for r in before['completed'] if r['id']==qid),None);replayed=bool(old)
             awards=[];consumed=[]
-            stage_changed=False;accepted_after=()
+            stage_changed=False;class_changed=False;accepted_after=()
             if not old:
                 if kind=='accept':
                     if done:raise ValueError('Quest already rewarded')
@@ -303,6 +316,7 @@ class QuestState:
                     if reward.get('m_eChangeUnitClass',0):
                         from els_server.storage.careers import apply_quest_transition
                         old_career,new_career=apply_quest_transition(db,uid,q)
+                        class_changed=old_career['unit_class']!=new_career['unit_class']
                         stage_changed=(old_career['transcendence'],old_career['master'])!=(new_career['transcendence'],new_career['master'])
                     from els_server.storage.artifact_progression import complete_quest as complete_artifact_quest
                     complete_artifact_quest(db,uid,qid)
@@ -316,17 +330,25 @@ class QuestState:
                     accepted_after=() if erp_scope.scoped(qid) else accept_after_reward(db,uid,qid,load_character(db,uid,self.account_id),load_items(db,uid),location,now)
                 db.execute('INSERT INTO quest_actions VALUES (?,?,?,?)',(operation_id,uid,kind,digest))
             items=load_items(db,uid);character=load_character(db,uid,self.account_id);state=_state(db,uid,items)
+            career_refresh=class_changed
             if kind=='claim' and replayed:
                 saved=erp_scope.reward_row(db,uid,qid)
                 if saved:
                     saved=json.loads(saved[0]);ids={i['uid'] for i in saved['items']}
                     awards=[i for i in items if i['uid'] in ids]
                     consumed=[(tuple(pos),next((i for i in items if (i['group'],i['slot'])==tuple(pos)),None)) for pos in saved.get('consumed_positions',[])]
+                    # The existing success receipt and pinned quest reward
+                    # authorize a fresh CURRENT career snapshot on retry.
+                    # No transition or reward is repeated, including for old
+                    # receipts that predate the career notification fix.
+                    career_refresh=bool(q['Reward'].get('m_eChangeUnitClass',0))
             from els_server.storage.reward_state import validate_balances
             balances=validate_balances(db.execute('SELECT ed,experience,revision FROM reward_balances WHERE uid=?',(uid,)).fetchone())
             result=dict(replayed=replayed,state=state,character=character,balances=balances,items=items,updates=awards,consumed=consumed,slots=current_slots(db,character))
             result['accepted_after']=[row for row in state['active'] if row['id'] in accepted_after]
             if stage_changed:result['stage_changed']=True
+            if class_changed:result['class_changed']=True
+            if career_refresh:result['career_refresh']=True
             # All responses, including full unit and inventory bodies, must be
             # encodable before SQL commit. No stale receipt inventory deltas.
             if erp_scope.scoped(qid):erp_scope.before_action(db,uid,self.account_id,kind,self.account_source_guard,qid=qid)
@@ -348,8 +370,8 @@ class QuestState:
 
     def record(self,event_id,event,proof,*,validate=None,prepare=None,transaction=None):
         if not isinstance(event_id,str) or not 1<=len(event_id)<=200 or not isinstance(proof,bytes) or not proof:raise ValueError('Quest progress evidence')
-        if event.get('kind') not in ('kill','clear','visit_town','visit_dungeon') or type(event.get('dungeon')) is not int or type(event.get('level')) is not int:raise ValueError('Quest progress event')
-        if event['kind']=='kill' and type(event.get('npc')) is not int:raise ValueError('Quest NPC event')
+        if event.get('kind') not in ('kill','clear','visit_town','visit_dungeon','retire') or type(event.get('dungeon')) is not int or type(event.get('level')) is not int:raise ValueError('Quest progress event')
+        if event['kind'] in ('kill','retire') and type(event.get('npc')) is not int:raise ValueError('Quest NPC event')
         if event['kind']=='visit_town' and type(event.get('town')) is not int:raise ValueError('Quest town event')
         digest=hashlib.sha256(proof).hexdigest();raw=json.dumps(event,sort_keys=True)
         roll_proof=progress_proof(self.uid,event_id,proof)

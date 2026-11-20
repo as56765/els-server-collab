@@ -90,9 +90,12 @@ def handle(s,event,sequence):
  except ValueError:return [summon_ack(-1)]
  entries=[];wires=[];initial=[]
  for dto,key in zip(rows,free):
-  template=struct.unpack_from('<i',dto,4)[0];native=run.catalog._data['npcs'][str(template)];boss=bool(dto[0x61]);hp=native['script_max_hp'] or (5000 if boss else 500)
+  template=struct.unpack_from('<i',dto,4)[0];boss=bool(dto[0x61])
+  from els_server.domain.formal_npc_hp import summoned_maximum
+  hp,npc_level=summoned_maximum(run,template)
+  dto[0x53]=npc_level
   struct.pack_into('<i',dto,0,key)
-  init=npc_initialization(run.catalog,template,hp);wire=encode_npc(dto,0)
+  init=npc_initialization(run.catalog,template,hp,dynamic_context=(run.identity,run.graph['source_sha256'],npc_level,run.stage));wire=encode_npc(dto,0)
   entries.append(dict(key=key,template=template,key_code=struct.unpack_from('<i',dto,0x4f)[0],active=bool(dto[0x4e]),team=dto[8],ally=bool(dto[0x66]),no_drop=True,boss=boss,hp=hp,dynamic=True,wire=wire,init=init))
   wires.append(wire);initial.append(struct.pack('>i',key)+init)
  # C50040: NPC vector, four-byte flags map, scalar, byte vector,

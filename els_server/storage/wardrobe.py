@@ -160,7 +160,7 @@ def change(path,owner,account_id,kind,payload,operation,*,validate=lambda:None):
             if kind==0xbee:
                 result=acknowledgement(kind,favorite_values=favorites(db,owner,account_id),favorite_mode=request[0]);validate();return result
             changes=[((i['group'],i['slot']),i)for uid in json.loads(old[4])if(i:=by_uid.get(uid))is not None]
-            result=acknowledgement(kind,registry,changes);validate();return result
+            result=acknowledgement(kind,{} if kind==0x4b1 else registry,changes);validate();return result
         if kind==0xbee:
             from els_server.domain.wardrobe import catalog
             from els_server.game_data import client_data
@@ -208,7 +208,10 @@ def change(path,owner,account_id,kind,payload,operation,*,validate=lambda:None):
         # Only appearance/binding fields can change; identity, location and stats persist.
         strip=lambda i:{k:v for k,v in i.items()if k not in ('appearance_template','wardrobe_hanger','appearance_colors')and not(k=='dye_colors'and not any(v))}
         if [strip(i)for i in after]!=[strip(i)for i in before]:raise ValueError('Wardrobe altered base inventory')
-        result=acknowledgement(kind,counts(db,owner,account_id),[((current[u]['group'],current[u]['slot']),current[u])for u in affected])
+        # 4B2 also lists every returned registry key as a newly registered hanger.
+        # Applying existing appearances changes items, not account registration.
+        registered={} if kind==0x4b1 else counts(db,owner,account_id)
+        result=acknowledgement(kind,registered,[((current[u]['group'],current[u]['slot']),current[u])for u in affected])
         db.execute('INSERT INTO wardrobe_receipts VALUES(?,?,?,?,?,?)',(operation,digest,owner,account_id,kind,json.dumps(affected)))
         validate()
         if kind==0x4af and any(current[request].get('dye_colors',())):
@@ -340,3 +343,25 @@ def points_notification(db,owner,account_id):
 def point_initialization(path,owner,account_id):
     with closing(sqlite3.connect(path,timeout=10))as db:
         db.execute('BEGIN');return points_notification(db,owner,account_id)
+
+def opening_info(path,owner,account_id,*,validate=lambda:None):
+    """Current identity, existing registry integrity and normal UI restrictions.
+
+    This profile configures no additional time-control UI bans. The normal
+    legacy builder's empty restriction set is the actual default, not an
+    ownership grant. Existing registry and all writer admission remain intact.
+    """
+    from pathlib import Path
+    from els_server.protocol.wardrobe_messages import opening_information
+    from els_server.protocol.protocol_codec import encode_event
+    owner=character_uid(owner)
+    if type(account_id)is not int or not 0<account_id<2**63:raise ValueError('Wardrobe opening account')
+    with closing(sqlite3.connect(Path(path).resolve().as_uri()+'?mode=ro',uri=True,timeout=10))as db:
+        db.execute('PRAGMA query_only=ON');db.execute('BEGIN');validate()
+        if db.execute('SELECT c.uid FROM characters c JOIN character_owners o ON o.uid=c.uid WHERE c.uid=? AND o.account_id=?',(owner,account_id)).fetchone()is None:
+            raise ValueError('Wardrobe opening current owner')
+        if present(db,'character_lifecycle'):
+            state=db.execute('SELECT requested_at,finalized_at FROM character_lifecycle WHERE uid=?',(owner,)).fetchone()
+            if state and any(state):raise ValueError('Wardrobe opening deleted owner')
+        counts(db,owner,account_id);favorites(db,owner,account_id)
+        event=opening_information();encode_event(event);validate();return [event]

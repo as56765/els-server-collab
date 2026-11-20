@@ -25,6 +25,14 @@ class FriendsSession(LocalSession):
         if self.released or not self.application.registry.enabled(self.identity['id']):raise SessionOrderError('Account is offline or disabled')
         if self.social_overflow:raise SessionOrderError('Social consumer is too slow')
         if self.coop_error:raise SessionOrderError(self.coop_error)
+        # The fixed DX11 capture's 7D0 is an unconsumed nine-byte auxiliary
+        # notification, emitted five times a second. It has no domain handler.
+        # Authentication and stream sequencing still run. The existing
+        # independent periodic path performs online-clock persistence and
+        # expiry/quest/activity work; never rebuild all wire projections here.
+        from els_server.domain.session_auxiliary import friends_auxiliary_noop
+        if friends_auxiliary_noop(self,event):
+            return self.mailbox.drain()
         result=self.application.world.field_bosses.request(self,event)
         if result is not None:return self.activity_reply(result+self.mailbox.drain())
         # Save the final native Lu/Ciel selector before dungeon exit detaches
@@ -74,10 +82,11 @@ class FriendsSession(LocalSession):
             self.application.world.moved(self,event.payload)
         if self.phase=='town_ready' and event.event_id==0x202:
             kinds={e.kind for e in result if e.event_id==0x201}
-            luciel=self.account.character()['unit_type']==10
+            luciel=self.account.character_identity()['unit_type']==10
             career=luciel and event.kind in (0x219,0x80f) and bool(kinds&{0x29f,0x59f})
             expiry=0x1c6 in kinds
-            if event.kind in (0x104,0x213) or career or expiry or (event.kind in (0x4b1,0x6d7,0xad6) and any(e.kind==event.kind+1 and e.payload[:4]==bytes(4) for e in result)):
+            mystic=event.kind==0x6e7 and any(e.event_id==0x201 and e.kind==0x6e8 and len(e.payload)>=40 and e.payload[:4]==bytes(4) and e.payload[-16:-12]==bytes((0,0,0,4)) for e in result)
+            if event.kind in (0x104,0x213) or career or expiry or mystic or (event.kind==0x8b1 and any(e.kind==0x8b2 and e.payload[:4]==bytes(4) for e in result)) or (event.kind in (0x4b1,0x6d7,0xad6) and any(e.kind==event.kind+1 and e.payload[:4]==bytes(4) for e in result)):
                 # Reuse the existing current-instance/learned-skill projection
                 # for peers only; never restore or heal the owner again.
                 self.application.world.appearance_changed(self)
@@ -150,8 +159,6 @@ class FriendsSession(LocalSession):
 class Application:
     def __init__(self, config, *, activity2026_awards_factory=None):
         self.config=config
-        from els_server.domain import shop_local_offers
-        shop_local_offers.configure(config.state_file.parent/'local-shop-offers.json')
         self.activity2026_awards_factory=activity2026_awards_factory
         self.executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='els-account')
         self.account=None
@@ -165,15 +172,21 @@ class Application:
             with committed_reads():
                 return invoke_with_reads()
         def invoke_with_reads():
+            from els_server.domain.session_auxiliary import auxiliary_call,activity_due
+            if auxiliary_call(function,args):
+                # The original handler still checks authentication and drains
+                # pending mail. Periodic/ordinary requests retain the clocks.
+                return function(*args,**kwargs)
             session=getattr(function,'__self__',None)
             timer=getattr(getattr(session,'activity2026_awards',None),'online',None)
-            observed=isinstance(session,LocalSession) and function.__name__ in ('handle','periodic_notifications') and timer is not None
+            activity=isinstance(session,LocalSession) and function.__name__ in ('handle','periodic_notifications') and timer is not None
+            observed=activity and activity_due(function)
             if observed:timer.observe(session)
             try:
                 result=function(*args,**kwargs)
             finally:
                 if observed:timer.observe(session)
-            flow=getattr(session,'activity2026_awards',None) if observed else None
+            flow=getattr(session,'activity2026_awards',None) if activity and (observed or result) else None
             after=getattr(flow,'after_reply',None)
             return after(session,result) if after is not None else result
         return await asyncio.get_running_loop().run_in_executor(self.executor,invoke)
@@ -216,6 +229,8 @@ class Application:
                 session=LocalSession(self.account,port_probe_port=port_probe_port,**self.config.session_options(),**self.activity_options(self.account))
                 session._chip_reset_local_application=self
                 session._chip_reset_local_live=True
+                session._c1_local_application=self
+                session._c1_local_live=True
                 session._box119335_local_application=self
                 session._box119335_local_live=True
                 session._cartridge40326_local_application=self
@@ -249,6 +264,10 @@ class Application:
                 finally:
                     close_mount(session)
             finally:
+                if type(session) is LocalSession and getattr(session,'_c1_local_application',None) is self:
+                    session._c1_local_live=False
+                    if getattr(self,'_c1_local_context',None) is getattr(session,'_c1_hp_context',None):
+                        self._c1_local_context=None
                 if type(session) is LocalSession and getattr(session,'_chip_reset_local_application',None) is self:
                     session._chip_reset_local_live=False
                 if type(session) is LocalSession and getattr(session,'_cartridge40326_local_application',None) is self:
